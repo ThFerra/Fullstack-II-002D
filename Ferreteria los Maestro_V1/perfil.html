@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Ferretería Los Maestros - Mi Perfil</title>
+	<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+	<!-- Navegación de la cuenta del cliente -->
+	<header class="main-header">
+		<div class="logo"><h1>Ferretería Los Maestros</h1></div>
+		<nav class="main-nav">
+			<ul>
+				<li><a href="index.html">Inicio</a></li>
+				<li><a>Catálogo</a></li>
+				<li><a href="perfil.html" class="active">Mi Perfil</a></li>
+			</ul>
+		</nav>
+	</header>
+
+	<!-- Resumen de cuenta e historial de actividad -->
+	<main class="container profile-layout">
+		<section class="page-heading">
+			<p class="eyebrow">Cuenta de cliente</p>
+			<h2>Mi actividad</h2>
+			<p>Revisa tus datos, tu selección actual y las últimas acciones realizadas.</p>
+		</section>
+
+		<div class="profile-grid">
+			<section class="form-box profile-card">
+				<p class="eyebrow">Usuario activo</p>
+				<h3>Cliente de prueba</h3>
+				<p class="profile-email">cliente@losmaestros.cl</p>
+				<span class="profile-badge">Cliente</span>
+				<button id="btn-cerrar-sesion" class="btn-danger profile-logout" type="button">Cerrar sesión</button>
+			</section>
+
+			<section class="form-box profile-card">
+				<p class="eyebrow">Mi selección</p>
+				<p class="profile-total">$<span id="perfil-total">0</span></p>
+				<p id="perfil-resumen">No tienes productos seleccionados.</p>
+				<a class="btn-primary">Ver catálogo</a>
+			</section>
+		</div>
+
+		<section class="form-box activity-card">
+			<div class="activity-heading">
+				<div>
+					<p class="eyebrow">Registro reciente</p>
+					<h3>Lo que has hecho</h3>
+				</div>
+				<button id="btn-limpiar-actividad" class="btn-secondary" type="button">Limpiar historial</button>
+			</div>
+			<ul id="lista-actividad" class="activity-list"></ul>
+		</section>
+	</main>
+
+	<footer class="main-footer">
+		<p>&copy; 2026 Ferretería Los Maestros - La Serena, Región de Coquimbo.</p>
+	</footer>
+
+	<!-- Carga del carrito, actividad y cierre de sesión -->
+	<script>
+		if (sessionStorage.getItem('los_maestros_user_session') !== 'active') {
+			window.location.href = 'login.html';
+		}
+
+		const carrito = JSON.parse(localStorage.getItem('carrito_maestros')) || [];
+		const actividad = JSON.parse(localStorage.getItem('actividad_maestros')) || [];
+		const total = carrito.reduce((suma, producto) => suma + producto.precio, 0);
+		const resumen = document.getElementById('perfil-resumen');
+		const lista = document.getElementById('lista-actividad');
+
+		document.getElementById('perfil-total').textContent = total.toLocaleString('es-CL');
+		if (carrito.length) {
+			resumen.textContent = `${carrito.length} producto(s) en tu selección.`;
+		}
+
+		function mostrarActividad() {
+			const registros = JSON.parse(localStorage.getItem('actividad_maestros')) || [];
+			lista.innerHTML = registros.length
+				? registros.map(item => `<li><span>${item.descripcion}</span><time>${item.fecha}</time></li>`).join('')
+				: '<li class="empty-activity">Aún no hay actividad registrada.</li>';
+		}
+
+		document.getElementById('btn-limpiar-actividad').addEventListener('click', () => {
+			localStorage.removeItem('actividad_maestros');
+			mostrarActividad();
+		});
+
+		document.getElementById('btn-cerrar-sesion').addEventListener('click', () => {
+			const registros = JSON.parse(localStorage.getItem('actividad_maestros')) || [];
+			registros.unshift({
+				descripcion: 'Cerró sesión como cliente',
+				fecha: new Date().toLocaleString('es-CL')
+			});
+			localStorage.setItem('actividad_maestros', JSON.stringify(registros.slice(0, 30)));
+			sessionStorage.removeItem('los_maestros_user_session');
+			window.location.href = 'login.html';
+		});
+
+		mostrarActividad();
+	</script>
+</body>
+</html>
