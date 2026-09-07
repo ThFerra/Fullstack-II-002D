@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferretería Los Maestros - Contacto</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navegación pública -->
+    <header class="main-header">
+        <div class="logo"><h1>Ferretería Los Maestros</h1></div>
+        <nav class="main-nav">
+            <ul>
+                <li><a href="index.html">Inicio</a></li>
+                <li><a href="catalogo.html">Catálogo</a></li>
+                <li><a href="contacto.html" class="active">Contacto</a></li>
+                <li><a href="login.html">Iniciar Sesión</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- Formulario de consultas de clientes -->
+    <main class="container">
+        <h2>Contáctanos</h2>
+        <p>¿Tienes dudas con tus compras o pedidos? Envíanos tu mensaje.</p>
+        
+        <form id="form-contacto" class="form-box" novalidate>
+            <div class="form-group">
+                <label for="nombre-contacto">Nombre Completo *</label>
+                <input type="text" id="nombre-contacto" maxlength="100">
+                <span class="error-msg" id="err-nombre-contacto"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="correo-contacto">Correo Electrónico *</label>
+                <input type="email" id="correo-contacto" maxlength="100">
+                <span class="error-msg" id="err-correo-contacto"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="mensaje-contacto">Comentario / Consulta *</label>
+                <textarea id="mensaje-contacto" maxlength="500" rows="5"></textarea>
+                <span class="error-msg" id="err-mensaje-contacto"></span>
+            </div>
+
+            <button type="submit" class="btn-primary">Enviar Consulta</button>
+            <div id="exito-contacto" class="success-msg"></div>
+        </form>
+    </main>
+
+    <!-- Validación del formulario de contacto -->
+    <script src="js/validaciones.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferretería Los Maestros - Catálogo</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Encabezado del catálogo -->
+    <header class="main-header">
+        <div class="logo"><h1>Ferretería Los Maestros</h1></div>
+        <nav class="main-nav">
+            <ul>
+                <li><a href="index.html">Inicio</a></li>
+                <li><a href="catalogo.html" class="active">Catálogo</a></li>
+                <li><a href="contacto.html">Contacto</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- Productos generados con JavaScript y selección del cliente -->
+    <main class="container layout-catalogo">
+        <section class="productos-section">
+            <h2>Catálogo de Productos (Stock en Tiempo Real)</h2>
+            <div id="grid-productos" class="grid-cards">
+                <!-- Se genera dinámicamente con JS -->
+            </div>
+        </section>
+
+        <aside class="carrito-section">
+            <h2>Mi Selección / Pedido</h2>
+            <ul id="lista-carrito" class="lista-carrito">
+                <!-- Ítems agregados dinámicamente -->
+            </ul>
+            <div class="carrito-total">
+                <strong>Total: $<span id="total-carrito">0</span></strong>
+            </div>
+            <button id="btn-vaciar" class="btn-danger">Vaciar Carrito</button>
+        </aside>
+    </main>
+
+    <!-- Lógica del catálogo y carrito -->
+    <script src="js/app.js"></script>
+</body>
+</html>
