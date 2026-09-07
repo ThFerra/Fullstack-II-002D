@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferretería Los Maestros - Registro</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navegación -->
+    <header class="main-header">
+        <div class="logo"><h1>Ferretería Los Maestros</h1></div>
+        <nav class="main-nav">
+            <ul>
+                <li><a href="index.html">Inicio</a></li>
+                <li><a href="login.html">Iniciar Sesión</a></li>
+                <li><a href="registro.html" class="active">Registro</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- Formulario registro -->
+    <main class="container">
+        <h2>Registro de Nuevo Usuario</h2>
+        <form id="form-registro" class="form-box" novalidate>
+            
+            <div class="form-group">
+                <label for="run">RUN (sin puntos ni guión, ej: 19876543K) *</label>
+                <input type="text" id="run" placeholder="12345678K">
+                <span class="error-msg" id="err-run"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="nombre">Nombre *</label>
+                <input type="text" id="nombre" maxlength="50">
+                <span class="error-msg" id="err-nombre"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="apellidos">Apellidos *</label>
+                <input type="text" id="apellidos" maxlength="100">
+                <span class="error-msg" id="err-apellidos"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="correo">Correo Electrónico *</label>
+                <input type="email" id="correo" maxlength="100">
+                <span class="error-msg" id="err-correo"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="fecha-nac">Fecha de Nacimiento (Opcional)</label>
+                <input type="date" id="fecha-nac">
+            </div>
+
+            <div class="form-group">
+                <label for="tipo-usuario">Tipo de Usuario *</label>
+                <select id="tipo-usuario">
+                    <option value="">-- Seleccionar --</option>
+                    <option value="Cliente particular">Cliente Particular</option>
+                    <option value="Contratista / Maestro">Contratista / Maestro de Obra</option>
+                </select>
+                <span class="error-msg" id="err-tipo-usuario"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="region">Región *</label>
+                <select id="region">
+                    <option value="">-- Seleccione Región --</option>
+                </select>
+                <span class="error-msg" id="err-region"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="comuna">Comuna *</label>
+                <select id="comuna" disabled>
+                    <option value="">-- Seleccione primero una Región --</option>
+                </select>
+                <span class="error-msg" id="err-comuna"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="direccion">Dirección *</label>
+                <input type="text" id="direccion" maxlength="300">
+                <span class="error-msg" id="err-direccion"></span>
+            </div>
+
+            <button type="submit" class="btn-primary">Registrarse</button>
+            <div id="exito-registro" class="success-msg"></div>
+        </form>
+    </main>
+
+    <!-- Validaciones -->
+    <script src="js/validaciones.js"></script>
+</body>
+</html>
