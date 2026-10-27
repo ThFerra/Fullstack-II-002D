@@ -254,25 +254,6 @@ const registrarActividad = (descripcion: string) => {
   localStorage.setItem('actividad_maestros', JSON.stringify(actividad.slice(0, 30)))
 }
 
-const obtenerCuentaActiva = (): CustomerAccount | null => {
-  const correo = sessionStorage.getItem('los_maestros_user_email')
-  if (!correo) return null
-  if (correo.toLowerCase() === demoCustomerAccount.correo) return demoCustomerAccount
-
-  const saved = JSON.parse(localStorage.getItem('cuentas_maestros') || '[]') as CustomerAccount[]
-  return saved.find((account) => account.correo.toLowerCase() === correo.toLowerCase()) ?? null
-}
-
-const crearFormularioPerfil = (account: CustomerAccount | null) => ({
-  nombre: account?.nombre ?? '',
-  apellidos: account?.apellidos ?? '',
-  correo: account?.correo ?? '',
-  telefono: account?.telefono ?? '',
-  region: account?.region ?? '',
-  comuna: account?.comuna ?? '',
-  direccion: account?.direccion ?? '',
-})
-
 function App() {
   const [activeView, setActiveView] = useState<View>('home')
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
@@ -299,10 +280,14 @@ function App() {
     const saved = localStorage.getItem('cuentas_maestros')
     return saved ? JSON.parse(saved) : []
   })
-  const [activeAccount, setActiveAccount] = useState<CustomerAccount | null>(obtenerCuentaActiva)
-  const [adminSession, setAdminSession] = useState(
-    () => sessionStorage.getItem('los_maestros_admin_session') === 'active',
-  )
+  const [activeAccount, setActiveAccount] = useState<CustomerAccount | null>(() => {
+    const correo = sessionStorage.getItem('los_maestros_user_email')
+    if (!correo) return null
+    if (correo.toLowerCase() === demoCustomerAccount.correo) return demoCustomerAccount
+    const saved = JSON.parse(localStorage.getItem('cuentas_maestros') || '[]') as CustomerAccount[]
+    return saved.find((account) => account.correo.toLowerCase() === correo.toLowerCase()) ?? null
+  })
+  const [adminSession, setAdminSession] = useState(false)
   const [loginForm, setLoginForm] = useState({ correo: '', password: '' })
   const [loginMessage, setLoginMessage] = useState('')
   const [contactForm, setContactForm] = useState({ nombre: '', correo: '', mensaje: '' })
@@ -321,7 +306,15 @@ function App() {
     confirmarPassword: '',
   })
   const [registerMessage, setRegisterMessage] = useState('')
-  const [profileForm, setProfileForm] = useState(() => crearFormularioPerfil(activeAccount))
+  const [profileForm, setProfileForm] = useState({
+    nombre: '',
+    apellidos: '',
+    correo: '',
+    telefono: '',
+    region: '',
+    comuna: '',
+    direccion: '',
+  })
   const [profileMessage, setProfileMessage] = useState('')
   const [adminLoginForm, setAdminLoginForm] = useState({ correo: '', password: '' })
   const [adminMessage, setAdminMessage] = useState('')
@@ -356,6 +349,23 @@ function App() {
   useEffect(() => {
     localStorage.setItem('cuentas_maestros', JSON.stringify(accounts))
   }, [accounts])
+
+  useEffect(() => {
+    if (!activeAccount) return
+    setProfileForm({
+      nombre: activeAccount.nombre,
+      apellidos: activeAccount.apellidos,
+      correo: activeAccount.correo,
+      telefono: activeAccount.telefono,
+      region: activeAccount.region,
+      comuna: activeAccount.comuna,
+      direccion: activeAccount.direccion,
+    })
+  }, [activeAccount])
+
+  useEffect(() => {
+    setAdminSession(sessionStorage.getItem('los_maestros_admin_session') === 'active')
+  }, [])
 
   const featuredProducts = useMemo(() => products.slice(0, 3), [products])
   const selectedProduct = products.find((product) => product.id === selectedProductId) ?? null
@@ -415,7 +425,6 @@ function App() {
         setAccounts((previous) => [...previous, demoCustomerAccount])
       }
       setActiveAccount(signedInAccount)
-      setProfileForm(crearFormularioPerfil(signedInAccount))
       sessionStorage.setItem('los_maestros_user_session', 'active')
       sessionStorage.setItem('los_maestros_user_email', signedInAccount.correo)
       registrarActividad('Inicio de sesión como cliente')
@@ -536,7 +545,6 @@ function App() {
     setAccounts((previous) => [...previous, newAccount])
     setUsers((prev) => [...prev, newUser])
     setActiveAccount(newAccount)
-    setProfileForm(crearFormularioPerfil(newAccount))
     sessionStorage.setItem('los_maestros_user_session', 'active')
     sessionStorage.setItem('los_maestros_user_email', newAccount.correo)
     registrarActividad('Creó una cuenta de cliente')
@@ -598,7 +606,6 @@ function App() {
       ? { ...user, nombre: `${updatedAccount.nombre} ${updatedAccount.apellidos}`, correo }
       : user))
     setActiveAccount(updatedAccount)
-    setProfileForm(crearFormularioPerfil(updatedAccount))
     sessionStorage.setItem('los_maestros_user_email', correo)
     setProfileMessage('Tus datos se actualizaron correctamente.')
     registrarActividad('Actualizó sus datos personales')
