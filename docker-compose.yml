@@ -1,0 +1,18 @@
+# Opcional: levanta MySQL 8 con Docker si no tienes XAMPP, Laragon o MySQL instalado.
+# Uso:  docker compose up -d
+# Usuario root sin contraseña, igual que la configuración por defecto de los microservicios.
+# Cada microservicio crea su propia base de datos al iniciar (ferreteria_auth, ferreteria_usuarios, ...).
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: ferreteria-mysql
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      TZ: America/Santiago
+    ports:
+      - "3306:3306"
+    volumes:
+      - ferreteria-mysql-data:/var/lib/mysql
+
+volumes:
+  ferreteria-mysql-data:

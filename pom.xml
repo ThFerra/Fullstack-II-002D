@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  POM agregador: permite compilar los 7 microservicios con un solo comando
+  desde esta carpeta (mvn clean package). Cada microservicio sigue siendo
+  un proyecto Spring Boot independiente con su propio pom.xml.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>cl.losmaestros</groupId>
+    <artifactId>ferreteria-backend</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    <name>Ferretería Los Maestros - Backend (microservicios)</name>
+
+    <modules>
+        <module>auth-service</module>
+        <module>usuarios-service</module>
+        <module>productos-service</module>
+        <module>inventario-service</module>
+        <module>carrito-service</module>
+        <module>contacto-service</module>
+        <module>contenido-service</module>
+    </modules>
+</project>
