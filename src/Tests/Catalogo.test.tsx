@@ -1,13 +1,9 @@
 // @vitest-environment jsdom
-// Pruebas del catálogo, detalle de producto y carrito (renderizado, estado y eventos)
-import { afterEach, beforeEach, expect, test } from "vitest";
+// Pruebas del catálogo y del carrito conectados al backend (productos, inventario y carrito)
+import { afterEach, expect, test } from "vitest";
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 
-import { irA, limpiarAlmacenamiento, renderApp } from "./helpers";
-
-beforeEach(() => {
-    limpiarAlmacenamiento();
-});
+import { iniciarSesion, irA, prepararBackend, renderApp } from "./helpers";
 
 afterEach(() => {
     cleanup();
@@ -19,76 +15,74 @@ function panelCarrito() {
     return within(titulo.parentElement as HTMLElement);
 }
 
+async function entrarComoClienteAlCatalogo() {
+    renderApp();
+    iniciarSesion("cliente@losmaestros.cl", "Cliente123");
+    await screen.findByRole("heading", { name: "Hola, Cliente" });
+    irA("Catálogo");
+    return screen.findAllByRole("button", { name: "Agregar" });
+}
+
 // 5
-test("el catálogo renderiza los 8 productos con su stock", () => {
+test("el catálogo muestra los 8 productos que entrega la API con su stock", async () => {
+    prepararBackend();
     renderApp();
     irA("Catálogo");
 
-    expect(screen.getAllByRole("button", { name: "Ver detalle" }).length).toBe(8);
-    expect(screen.getAllByText(/Stock disponible:/).length).toBe(8);
+    expect((await screen.findAllByRole("button", { name: "Ver detalle" })).length).toBe(8);
+    expect(screen.getByText("Stock disponible: 12")).toBeTruthy();
+    expect(screen.getByText("$79.990")).toBeTruthy();
 });
 
 // 6
-test("el mensaje de carrito vacío solo se muestra cuando no hay productos", () => {
+test("sin sesión, 'Agregar' lleva al login en vez de usar el carrito", async () => {
+    prepararBackend();
     renderApp();
     irA("Catálogo");
-    expect(panelCarrito().getByText("Tu selección está vacía.")).toBeTruthy();
 
-    irA("Inicio");
-    fireEvent.click(screen.getAllByRole("button", { name: "Agregar" })[0]);
-    irA("Catálogo");
+    fireEvent.click((await screen.findAllByRole("button", { name: "Agregar" }))[0]);
 
-    expect(panelCarrito().queryByText("Tu selección está vacía.")).toBeNull();
-    expect(panelCarrito().getByText("Saco Cemento Polpaico 25kg")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Accede a tu cuenta" })).toBeTruthy();
+    expect(screen.getByText("Inicia sesión para agregar productos a tu selección.")).toBeTruthy();
 });
 
 // 7
-test("agregar dos productos calcula el total y lo guarda en localStorage", () => {
-    renderApp();
+test("con sesión, agregar y quitar un producto actualiza el carrito del servidor", async () => {
+    const backend = prepararBackend();
+    const botones = await entrarComoClienteAlCatalogo();
 
-    const botones = screen.getAllByRole("button", { name: "Agregar" });
-    fireEvent.click(botones[0]); // Cemento $4.890
-    fireEvent.click(botones[1]); // Taladro $79.990
-    irA("Catálogo");
+    fireEvent.click(botones[3]); // Llave Monomando $22.990
 
-    expect(panelCarrito().getByText("$84.880")).toBeTruthy();
-    expect(JSON.parse(localStorage.getItem("carrito_maestros") || "[]").length).toBe(2);
+    expect(await panelCarrito().findByText("Llave Monomando Lavaplatos")).toBeTruthy();
+    expect(panelCarrito().getAllByText("$22.990").length).toBe(2); // subtotal y total
+    const agregar = backend.llamadas.find((l) => l.method === "POST" && l.ruta === "/api/carrito/items");
+    expect(agregar?.token).toBe("token:cliente@losmaestros.cl");
+
+    fireEvent.click(panelCarrito().getByRole("button", { name: "Quitar Llave Monomando Lavaplatos" }));
+
+    expect(await panelCarrito().findByText("Tu selección está vacía.")).toBeTruthy();
 });
 
 // 8
-test("el botón ❌ quita solo ese producto del carrito", () => {
-    renderApp();
-    const botones = screen.getAllByRole("button", { name: "Agregar" });
-    fireEvent.click(botones[0]);
-    fireEvent.click(botones[1]);
-    irA("Catálogo");
+test("muestra el error del backend cuando no hay stock suficiente (409)", async () => {
+    const backend = prepararBackend();
+    backend.stock.set(4, 1);
+    const botones = await entrarComoClienteAlCatalogo();
 
-    fireEvent.click(panelCarrito().getAllByRole("button", { name: "❌" })[0]);
+    fireEvent.click(botones[3]);
+    await panelCarrito().findByText("Llave Monomando Lavaplatos");
+    fireEvent.click(botones[3]);
 
-    expect(panelCarrito().queryByText("Saco Cemento Polpaico 25kg")).toBeNull();
-    expect(panelCarrito().getByText("Taladro Percutor 18V")).toBeTruthy();
+    expect(await screen.findByText("Stock insuficiente: quedan 1 unidad(es).")).toBeTruthy();
 });
 
 // 9
-test("'Vaciar carrito' elimina todos los productos y deja el total en $0", () => {
-    renderApp();
-    fireEvent.click(screen.getAllByRole("button", { name: "Agregar" })[0]);
-    irA("Catálogo");
-
-    fireEvent.click(screen.getByRole("button", { name: "Vaciar carrito" }));
-
-    expect(panelCarrito().getByText("Tu selección está vacía.")).toBeTruthy();
-    expect(panelCarrito().getByText("$0")).toBeTruthy();
-});
-
-// 10
-test("'Ver detalle' muestra la descripción y precio del producto", () => {
+test("si el backend está apagado, el catálogo muestra un mensaje de error", async () => {
+    prepararBackend({ caido: true });
     renderApp();
     irA("Catálogo");
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Ver detalle" })[1]);
-
-    expect(screen.getByRole("heading", { name: "Taladro Percutor 18V" })).toBeTruthy();
-    expect(screen.getByText("Taladro de alto torque para perforación y impacto profesional.")).toBeTruthy();
-    expect(screen.getByText("$79.990")).toBeTruthy();
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain("No se pudo cargar el catálogo");
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeTruthy();
 });

@@ -731,3 +731,28 @@
     border-radius: 18px;
   }
 }
+
+/* --- Integración con el backend --- */
+.session-badge {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: #5b6472;
+}
+
+.acceso-restringido {
+  border-left: 4px solid #c0392b;
+}
+
+.api-error {
+  border: 1px solid #e3a5a0;
+  background: #fdf1f0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.cart-message {
+  margin-bottom: 8px;
+}

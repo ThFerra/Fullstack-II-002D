@@ -3,10 +3,10 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
 
-import { irA, limpiarAlmacenamiento, renderApp } from "./helpers";
+import { irA, prepararBackend, renderApp } from "./helpers";
 
 beforeEach(() => {
-    limpiarAlmacenamiento();
+    prepararBackend();
 });
 
 afterEach(() => {

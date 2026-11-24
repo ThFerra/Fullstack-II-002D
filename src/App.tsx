@@ -1,25 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import './App.css'
 import './legacy-theme.css'
 import { MainNavigation } from './components/organisms/MainNavigation'
+import { AccesoRestringido } from './components/organisms/AccesoRestringido'
 import { SiteTemplate } from './components/templates/SiteTemplate'
-import {
-  createPasswordHash,
-  defaultUsers,
-  demoCustomerAccount,
-  type CustomerAccount,
-  type UserRecord,
-  regionesChile,
-} from './credentials'
+import { regionesChile } from './credentials'
 import { validarEmail, validarRun } from './validations'
+import { formatPrice, localImages, type NewsItem, type Product } from './items'
+import { sesionStore } from './api/session'
+import { aSesion, mensajeDeError } from './api/http'
 import {
-  formatPrice,
-  initialProducts,
-  localImages,
-  newsItems,
-  type NewsItem,
-  type Product,
-} from './items'
+  authApi,
+  carritoApi,
+  contactoApi,
+  contenidoApi,
+  inventarioApi,
+  productosApi,
+  usuariosApi,
+  type CarritoApi,
+  type CategoriaApi,
+  type RegionApi,
+  type UsuarioApi,
+} from './api/services'
 import {
   AboutPage,
   AdminPage,
@@ -43,63 +45,89 @@ type View =
   | 'perfil'
   | 'admin'
 
+/** Producto del catálogo + el id de su categoría (lo necesita el formulario de administración). */
+type ProductoVista = Product & { categoriaId: number }
+
 const registrarActividad = (descripcion: string) => {
   const actividad = JSON.parse(localStorage.getItem('actividad_maestros') || '[]') as Array<{ descripcion: string; fecha: string }>
   actividad.unshift({ descripcion, fecha: new Date().toLocaleString('es-CL') })
   localStorage.setItem('actividad_maestros', JSON.stringify(actividad.slice(0, 30)))
 }
 
+const formularioRegistroVacio = {
+  run: '',
+  nombre: '',
+  apellidos: '',
+  correo: '',
+  telefono: '',
+  tipo: '',
+  region: '',
+  comuna: '',
+  direccion: '',
+  password: '',
+  confirmarPassword: '',
+}
+
+/** Catálogo: productos (productos-service) + stock (inventario-service). */
+async function obtenerCatalogo(): Promise<ProductoVista[]> {
+  const [productos, stock] = await Promise.all([
+    productosApi.listar(),
+    inventarioApi.listar().catch(() => []),
+  ])
+  const stockPorProducto = new Map(stock.map((s) => [s.productoId, s.cantidad]))
+  return productos.map((p) => ({
+    id: p.id,
+    nombre: p.nombre,
+    categoria: p.categoria,
+    categoriaId: p.categoriaId,
+    precio: p.precio,
+    stock: stockPorProducto.get(p.id) ?? 0,
+    img: p.imagen || localImages.pintura,
+    descripcion: p.descripcion ?? '',
+  }))
+}
+
+const aFormularioPerfil = (perfil: UsuarioApi) => ({
+  nombre: perfil.nombre,
+  apellidos: perfil.apellidos ?? '',
+  correo: perfil.correo,
+  telefono: perfil.telefono ?? '',
+  region: perfil.region ?? '',
+  comuna: perfil.comuna ?? '',
+  direccion: perfil.direccion ?? '',
+})
+
+const formularioProductoVacio = { nombre: '', precio: '', stock: '', categoriaId: '', img: localImages.pintura }
+const formularioUsuarioVacio = { run: '', nombre: '', correo: '', tipo: 'Contratista', password: '', rol: 'CLIENTE' }
+
 function App() {
+  // ---------- Sesión (se mantiene al recargar la página) ----------
+  const sesion = useSyncExternalStore(sesionStore.suscribir, sesionStore.obtener)
+  const esAdmin = sesion?.rol === 'ADMIN'
+
   const [activeView, setActiveView] = useState<View>('home')
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null)
-  const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('productos_maestros')
-    if (!saved) return initialProducts
 
-    const storedProducts = JSON.parse(saved) as Product[]
-    return storedProducts.map((product) => {
-      const originalProduct = initialProducts.find((initialProduct) => initialProduct.id === product.id)
-      return originalProduct ? { ...product, img: originalProduct.img } : product
-    })
-  })
-  const [cart, setCart] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('carrito_maestros')
-    return saved ? JSON.parse(saved) : []
-  })
-  const [users, setUsers] = useState<UserRecord[]>(() => {
-    const saved = localStorage.getItem('usuarios_maestros')
-    return saved ? JSON.parse(saved) : defaultUsers
-  })
-  const [accounts, setAccounts] = useState<CustomerAccount[]>(() => {
-    const saved = localStorage.getItem('cuentas_maestros')
-    return saved ? JSON.parse(saved) : []
-  })
-  const [activeAccount, setActiveAccount] = useState<CustomerAccount | null>(() => {
-    const correo = sessionStorage.getItem('los_maestros_user_email')
-    if (!correo) return null
-    if (correo.toLowerCase() === demoCustomerAccount.correo) return demoCustomerAccount
-    const saved = JSON.parse(localStorage.getItem('cuentas_maestros') || '[]') as CustomerAccount[]
-    return saved.find((account) => account.correo.toLowerCase() === correo.toLowerCase()) ?? null
-  })
-  const [adminSession, setAdminSession] = useState(false)
+  // ---------- Datos que vienen del backend ----------
+  const [products, setProducts] = useState<ProductoVista[]>([])
+  const [catalogStatus, setCatalogStatus] = useState<'cargando' | 'listo' | 'error'>('cargando')
+  const [catalogError, setCatalogError] = useState('')
+  const [categorias, setCategorias] = useState<CategoriaApi[]>([])
+  const [news, setNews] = useState<NewsItem[]>([])
+  const [newsError, setNewsError] = useState('')
+  const [regiones, setRegiones] = useState<RegionApi[]>(regionesChile)
+  const [perfil, setPerfil] = useState<UsuarioApi | null>(null)
+  const [cart, setCart] = useState<CarritoApi | null>(null)
+  const [cartMessage, setCartMessage] = useState('')
+  const [users, setUsers] = useState<UsuarioApi[]>([])
+
+  // ---------- Formularios ----------
   const [loginForm, setLoginForm] = useState({ correo: '', password: '' })
   const [loginMessage, setLoginMessage] = useState('')
   const [contactForm, setContactForm] = useState({ nombre: '', correo: '', mensaje: '' })
   const [contactMessage, setContactMessage] = useState('')
-  const [registerForm, setRegisterForm] = useState({
-    run: '',
-    nombre: '',
-    apellidos: '',
-    correo: '',
-    telefono: '',
-    tipo: '',
-    region: '',
-    comuna: '',
-    direccion: '',
-    password: '',
-    confirmarPassword: '',
-  })
+  const [registerForm, setRegisterForm] = useState(formularioRegistroVacio)
   const [registerMessage, setRegisterMessage] = useState('')
   const [profileForm, setProfileForm] = useState({
     nombre: '',
@@ -111,83 +139,130 @@ function App() {
     direccion: '',
   })
   const [profileMessage, setProfileMessage] = useState('')
-  const [adminLoginForm, setAdminLoginForm] = useState({ correo: '', password: '' })
   const [adminMessage, setAdminMessage] = useState('')
-  const [adminProductForm, setAdminProductForm] = useState({
-    nombre: '',
-    precio: '',
-    stock: '',
-    categoria: '',
-    img: localImages.pintura,
-  })
+  const [adminProductForm, setAdminProductForm] = useState(formularioProductoVacio)
   const [productEditingId, setProductEditingId] = useState<number | null>(null)
-  const [adminUserForm, setAdminUserForm] = useState({
-    run: '',
-    nombre: '',
-    correo: '',
-    rol: 'Contratista',
-  })
+  const [adminUserForm, setAdminUserForm] = useState(formularioUsuarioVacio)
   const [userEditingId, setUserEditingId] = useState<number | null>(null)
 
-  useEffect(() => {
-    localStorage.setItem('productos_maestros', JSON.stringify(products))
-  }, [products])
+  // ---------- Carga de datos ----------
+
+  const mostrarCatalogo = (lista: ProductoVista[]) => {
+    setProducts(lista)
+    setCatalogStatus('listo')
+  }
+
+  const mostrarErrorCatalogo = (error: unknown) => {
+    setCatalogError(`No se pudo cargar el catálogo. ${mensajeDeError(error)}`)
+    setCatalogStatus('error')
+  }
+
+  /** Vuelve a pedir el catálogo (después de crear, editar o eliminar productos). */
+  const cargarCatalogo = () => obtenerCatalogo().then(mostrarCatalogo, mostrarErrorCatalogo)
 
   useEffect(() => {
-    localStorage.setItem('carrito_maestros', JSON.stringify(cart))
-  }, [cart])
+    obtenerCatalogo()
+      .then((lista) => {
+        setProducts(lista)
+        setCatalogStatus('listo')
+      })
+      .catch((error) => {
+        setCatalogError(`No se pudo cargar el catálogo. ${mensajeDeError(error)}`)
+        setCatalogStatus('error')
+      })
 
-  useEffect(() => {
-    localStorage.setItem('usuarios_maestros', JSON.stringify(users))
-  }, [users])
+    contenidoApi.noticias()
+      .then((noticias) => setNews(noticias.map((n) => ({
+        title: n.titulo,
+        image: n.imagen ?? '',
+        imageAlt: n.imagenAlt ?? n.titulo,
+        summary: n.resumen,
+        detail: n.detalle,
+      }))))
+      .catch((error) => setNewsError(`No se pudieron cargar las novedades. ${mensajeDeError(error)}`))
 
-  useEffect(() => {
-    localStorage.setItem('cuentas_maestros', JSON.stringify(accounts))
-  }, [accounts])
-
-  useEffect(() => {
-    if (!activeAccount) return
-    setProfileForm({
-      nombre: activeAccount.nombre,
-      apellidos: activeAccount.apellidos,
-      correo: activeAccount.correo,
-      telefono: activeAccount.telefono,
-      region: activeAccount.region,
-      comuna: activeAccount.comuna,
-      direccion: activeAccount.direccion,
+    usuariosApi.regiones().then(setRegiones).catch(() => {
+      // Sin conexión se usan las regiones locales para no bloquear el formulario.
     })
-  }, [activeAccount])
+  }, [])
 
+  // Cada vez que cambia la sesión (login, recarga de página o cierre) se cargan los datos del usuario.
+  const correoSesion = sesion?.correo
   useEffect(() => {
-    setAdminSession(sessionStorage.getItem('los_maestros_admin_session') === 'active')
+    if (!correoSesion) return
+    usuariosApi.miPerfil()
+      .then((datos) => {
+        setPerfil(datos)
+        setProfileForm(aFormularioPerfil(datos))
+      })
+      .catch(() => setPerfil(null))
+    carritoApi.ver().then(setCart).catch(() => setCart(null))
+  }, [correoSesion])
+
+  // Solo se muestran los datos que pertenecen a la sesión actual (evita ver datos de otra cuenta).
+  const perfilActual = sesion && perfil?.correo === sesion.correo ? perfil : null
+  const carritoActual = sesion && cart?.usuario === sesion.correo ? cart : null
+
+  const cargarDatosAdmin = useCallback(async () => {
+    try {
+      const [listaUsuarios, listaCategorias] = await Promise.all([usuariosApi.listar(), productosApi.categorias()])
+      setUsers(listaUsuarios)
+      setCategorias(listaCategorias)
+    } catch (error) {
+      setAdminMessage(mensajeDeError(error))
+    }
   }, [])
 
   const selectedProduct = products.find((product) => product.id === selectedProductId) ?? null
-  const cartTotal = cart.reduce((sum, item) => sum + item.precio, 0)
 
   const openView = (view: View, productId?: number) => {
     setActiveView(view)
-    if (productId !== undefined) {
-      setSelectedProductId(productId)
-    } else {
-      setSelectedProductId(null)
+    setSelectedProductId(productId ?? null)
+  }
+
+  const abrirPanelAdmin = () => {
+    openView('admin')
+    void cargarDatosAdmin()
+  }
+
+  // ---------- Carrito (carrito-service, requiere sesión) ----------
+
+  const addToCart = async (product: Product) => {
+    if (!sesionStore.obtener()) {
+      setLoginMessage('Inicia sesión para agregar productos a tu selección.')
+      openView('login')
+      return
+    }
+    try {
+      setCart(await carritoApi.agregar(product.id, 1))
+      setCartMessage(`"${product.nombre}" se agregó a tu selección.`)
+      registrarActividad(`Agregó "${product.nombre}" a su selección`)
+    } catch (error) {
+      setCartMessage(mensajeDeError(error))
     }
   }
 
-  const addToCart = (product: Product) => {
-    setCart((prev) => [...prev, product])
-    registrarActividad(`Agregó "${product.nombre}" a su selección`)
+  const removeFromCart = async (productoId: number) => {
+    try {
+      setCart(await carritoApi.quitar(productoId))
+      setCartMessage('')
+    } catch (error) {
+      setCartMessage(mensajeDeError(error))
+    }
   }
 
-  const removeFromCart = (index: number) => {
-    setCart((prev) => {
-      const product = prev[index]
-      if (product) registrarActividad(`Quitó "${product.nombre}" de su selección`)
-      return prev.filter((_, idx) => idx !== index)
-    })
+  const clearCart = async () => {
+    try {
+      setCart(await carritoApi.vaciar())
+      setCartMessage('')
+    } catch (error) {
+      setCartMessage(mensajeDeError(error))
+    }
   }
 
-  const loginCliente = (event: React.FormEvent<HTMLFormElement>) => {
+  // ---------- Inicio y cierre de sesión (auth-service) ----------
+
+  const loginCliente = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const correo = loginForm.correo.trim().toLowerCase()
     const password = loginForm.password
@@ -201,33 +276,38 @@ function App() {
       return
     }
 
-    const account = accounts.find((item) => item.correo.toLowerCase() === correo)
-    const isDemoLogin = correo === demoCustomerAccount.correo && password === 'Cliente123'
-
-    void (async () => {
-      const passwordMatches = account
-        ? await createPasswordHash(password, account.passwordSalt).then(({ passwordHash }) => passwordHash === account.passwordHash)
-        : false
-
-      if (!passwordMatches && !isDemoLogin) {
-        setLoginMessage('El correo o la contraseña no coinciden con una cuenta registrada.')
-        return
+    try {
+      const tokens = await authApi.login(correo, password)
+      sesionStore.guardar(aSesion(tokens))
+      registrarActividad(tokens.rol === 'ADMIN' ? 'Inicio de sesión como administrador' : 'Inicio de sesión como cliente')
+      setLoginForm({ correo: '', password: '' })
+      setLoginMessage('')
+      if (tokens.rol === 'ADMIN') {
+        abrirPanelAdmin()
+      } else {
+        setActiveView('perfil')
       }
-
-      const signedInAccount = account ?? demoCustomerAccount
-      if (!account && isDemoLogin) {
-        setAccounts((previous) => [...previous, demoCustomerAccount])
-      }
-      setActiveAccount(signedInAccount)
-      sessionStorage.setItem('los_maestros_user_session', 'active')
-      sessionStorage.setItem('los_maestros_user_email', signedInAccount.correo)
-      registrarActividad('Inicio de sesión como cliente')
-      setLoginMessage('¡Inicio de sesión exitoso!')
-      setActiveView('perfil')
-    })()
+    } catch (error) {
+      setLoginMessage(mensajeDeError(error))
+    }
   }
 
-  const handleContactSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const cerrarSesion = () => {
+    const actual = sesionStore.obtener()
+    if (actual) {
+      // Se revoca el refresh token en el servidor; si falla, igual se cierra localmente.
+      authApi.logout(actual.refreshToken).catch(() => undefined)
+    }
+    sesionStore.limpiar()
+    setProfileMessage('')
+    setAdminMessage('')
+    setCartMessage('')
+    setActiveView('home')
+  }
+
+  // ---------- Contacto (contacto-service) ----------
+
+  const handleContactSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const nombre = contactForm.nombre.trim()
@@ -247,10 +327,17 @@ function App() {
       return
     }
 
-    registrarActividad('Envió una consulta de contacto')
-    setContactMessage('Consulta enviada correctamente.')
-    setContactForm({ nombre: '', correo: '', mensaje: '' })
+    try {
+      const respuesta = await contactoApi.enviar({ nombre, correo, mensaje })
+      registrarActividad('Envió una consulta de contacto')
+      setContactMessage(respuesta.mensaje)
+      setContactForm({ nombre: '', correo: '', mensaje: '' })
+    } catch (error) {
+      setContactMessage(mensajeDeError(error))
+    }
   }
+
+  // ---------- Registro (usuarios-service + auth-service) ----------
 
   const handleRegisterSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -260,6 +347,7 @@ function App() {
     const apellidos = registerForm.apellidos.trim()
     const correo = registerForm.correo.trim().toLowerCase()
 
+    // Validaciones en el navegador (respuesta inmediata). El backend vuelve a validar todo.
     if (!validarRun(run)) {
       setRegisterMessage('Ingrese un RUN válido, sin puntos ni guion.')
       return
@@ -274,14 +362,6 @@ function App() {
     }
     if (!correo || correo.length > 100 || !validarEmail(correo)) {
       setRegisterMessage('Ingrese un correo válido de máximo 100 caracteres.')
-      return
-    }
-    if (correo === demoCustomerAccount.correo || accounts.some((account) => account.correo.toLowerCase() === correo)) {
-      setRegisterMessage('Ya existe una cuenta con ese correo. Inicia sesión o utiliza otro correo.')
-      return
-    }
-    if (accounts.some((account) => account.run === run)) {
-      setRegisterMessage('Ya existe una cuenta con ese RUN.')
       return
     }
     if (!registerForm.tipo) {
@@ -313,55 +393,26 @@ function App() {
       return
     }
 
-    const passwordCredentials = await createPasswordHash(registerForm.password)
-    const newAccount: CustomerAccount = {
-      id: Date.now(),
-      run,
-      nombre,
-      apellidos,
-      correo,
-      telefono: registerForm.telefono.trim(),
-      tipo: registerForm.tipo,
-      region: registerForm.region,
-      comuna: registerForm.comuna,
-      direccion: registerForm.direccion.trim(),
-      ...passwordCredentials,
+    try {
+      await usuariosApi.registrar({ ...registerForm, run, nombre, apellidos, correo })
+      // Con la cuenta creada, se inicia sesión automáticamente.
+      const tokens = await authApi.login(correo, registerForm.password)
+      sesionStore.guardar(aSesion(tokens))
+      registrarActividad('Creó una cuenta de cliente')
+      setRegisterMessage('')
+      setRegisterForm(formularioRegistroVacio)
+      setProfileMessage('Cuenta creada. ¡Te damos la bienvenida!')
+      setActiveView('perfil')
+    } catch (error) {
+      setRegisterMessage(mensajeDeError(error))
     }
-
-    const newUser: UserRecord = {
-      id: newAccount.id,
-      run,
-      nombre: `${nombre} ${apellidos}`,
-      correo,
-      rol: registerForm.tipo,
-    }
-
-    setAccounts((previous) => [...previous, newAccount])
-    setUsers((prev) => [...prev, newUser])
-    setActiveAccount(newAccount)
-    sessionStorage.setItem('los_maestros_user_session', 'active')
-    sessionStorage.setItem('los_maestros_user_email', newAccount.correo)
-    registrarActividad('Creó una cuenta de cliente')
-    setRegisterMessage('Cuenta creada. ¡Te damos la bienvenida!')
-    setRegisterForm({
-      run: '',
-      nombre: '',
-      apellidos: '',
-      correo: '',
-      telefono: '',
-      tipo: '',
-      region: '',
-      comuna: '',
-      direccion: '',
-      password: '',
-      confirmarPassword: '',
-    })
-    setActiveView('perfil')
   }
 
-  const saveProfile = (event: React.FormEvent<HTMLFormElement>) => {
+  // ---------- Perfil (usuarios-service) ----------
+
+  const saveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!activeAccount) return
+    if (!perfilActual) return
 
     const correo = profileForm.correo.trim().toLowerCase()
     if (!profileForm.nombre.trim() || !profileForm.apellidos.trim()) {
@@ -370,10 +421,6 @@ function App() {
     }
     if (!validarEmail(correo) || correo.length > 100) {
       setProfileMessage('Ingresa un correo válido.')
-      return
-    }
-    if (accounts.some((account) => account.id !== activeAccount.id && account.correo.toLowerCase() === correo)) {
-      setProfileMessage('Ese correo ya está asociado a otra cuenta.')
       return
     }
     if (profileForm.telefono.replace(/\D/g, '').length < 8) {
@@ -385,138 +432,161 @@ function App() {
       return
     }
 
-    const updatedAccount = {
-      ...activeAccount,
-      nombre: profileForm.nombre.trim(),
-      apellidos: profileForm.apellidos.trim(),
-      correo,
-      telefono: profileForm.telefono.trim(),
-      region: profileForm.region,
-      comuna: profileForm.comuna,
-      direccion: profileForm.direccion.trim(),
+    try {
+      const actualizado = await usuariosApi.actualizarMiPerfil({
+        nombre: profileForm.nombre.trim(),
+        apellidos: profileForm.apellidos.trim(),
+        correo,
+        telefono: profileForm.telefono.trim(),
+        region: profileForm.region,
+        comuna: profileForm.comuna,
+        direccion: profileForm.direccion.trim(),
+      })
+      registrarActividad('Actualizó sus datos personales')
+
+      if (actualizado.correo !== perfilActual.correo) {
+        // El token pertenece al correo anterior: hay que iniciar sesión con el nuevo.
+        sesionStore.limpiar()
+        setLoginMessage('Actualizaste tu correo. Inicia sesión nuevamente con el correo nuevo.')
+        setActiveView('login')
+        return
+      }
+      setPerfil(actualizado)
+      setProfileForm(aFormularioPerfil(actualizado))
+      setProfileMessage('Tus datos se actualizaron correctamente.')
+    } catch (error) {
+      setProfileMessage(mensajeDeError(error))
     }
-    setAccounts((previous) => previous.map((account) => account.id === activeAccount.id ? updatedAccount : account))
-    setUsers((previous) => previous.map((user) => user.id === activeAccount.id
-      ? { ...user, nombre: `${updatedAccount.nombre} ${updatedAccount.apellidos}`, correo }
-      : user))
-    setActiveAccount(updatedAccount)
-    sessionStorage.setItem('los_maestros_user_email', correo)
-    setProfileMessage('Tus datos se actualizaron correctamente.')
-    registrarActividad('Actualizó sus datos personales')
   }
 
-  const logoutCliente = () => {
-    sessionStorage.removeItem('los_maestros_user_session')
-    sessionStorage.removeItem('los_maestros_user_email')
-    setActiveAccount(null)
-    setProfileMessage('')
-    setActiveView('home')
-  }
+  // ---------- Administración: productos (productos-service + inventario-service) ----------
 
-  const adminLogin = (event: React.FormEvent<HTMLFormElement>) => {
+  const createOrUpdateProduct = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const email = adminLoginForm.correo.trim().toLowerCase()
-    const password = adminLoginForm.password
-
-    if (email !== 'admin@losmaestros.cl') {
-      setAdminMessage('El correo no corresponde a un administrador.')
-      return
-    }
-    if (password !== 'Admin123') {
-      setAdminMessage('La contraseña de administrador no es correcta.')
-      return
-    }
-
-    sessionStorage.setItem('los_maestros_admin_session', 'active')
-    setAdminSession(true)
-    setAdminMessage('Acceso autorizado.')
-  }
-
-  const logoutAdmin = () => {
-    sessionStorage.removeItem('los_maestros_admin_session')
-    setAdminSession(false)
-    setAdminLoginForm({ correo: '', password: '' })
-    setAdminMessage('')
-  }
-
-  const createOrUpdateProduct = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const trimmedName = adminProductForm.nombre.trim()
+    const nombre = adminProductForm.nombre.trim()
     const precio = Number(adminProductForm.precio)
     const stock = Number(adminProductForm.stock)
+    const categoriaId = Number(adminProductForm.categoriaId)
 
-    if (!trimmedName || !adminProductForm.categoria || !Number.isFinite(precio) || stock < 0) {
-      setAdminMessage('Complete todos los campos del producto.')
+    if (!nombre || !categoriaId || adminProductForm.precio === '' || !Number.isInteger(precio) || precio < 0
+        || adminProductForm.stock === '' || !Number.isInteger(stock) || stock < 0) {
+      setAdminMessage('Complete todos los campos del producto (precio y stock deben ser números enteros, sin negativos).')
       return
     }
 
-    if (productEditingId) {
-      setProducts((prev) =>
-        prev.map((item) =>
-          item.id === productEditingId
-            ? { ...item, nombre: trimmedName, precio, stock, categoria: adminProductForm.categoria, img: adminProductForm.img }
-            : item,
-        ),
-      )
-      setAdminMessage('Producto actualizado.')
-    } else {
-      const newProduct: Product = {
-        id: Date.now(),
-        nombre: trimmedName,
-        categoria: adminProductForm.categoria,
-        precio,
-        stock,
-        img: adminProductForm.img || localImages.pintura,
-        descripcion: 'Producto agregado desde el panel administrativo.',
+    try {
+      if (productEditingId) {
+        const original = products.find((p) => p.id === productEditingId)
+        await productosApi.actualizar(productEditingId, {
+          nombre,
+          descripcion: original?.descripcion,
+          precio,
+          imagen: adminProductForm.img,
+          categoriaId,
+        })
+        await inventarioApi.fijarStock(productEditingId, stock)
+        setAdminMessage('Producto actualizado.')
+      } else {
+        await productosApi.crear({ nombre, precio, imagen: adminProductForm.img, categoriaId, stockInicial: stock })
+        setAdminMessage('Producto creado.')
       }
-      setProducts((prev) => [newProduct, ...prev])
-      setAdminMessage('Producto creado.')
+      setAdminProductForm(formularioProductoVacio)
+      setProductEditingId(null)
+      await cargarCatalogo()
+    } catch (error) {
+      setAdminMessage(mensajeDeError(error))
     }
-
-    setAdminProductForm({ nombre: '', precio: '', stock: '', categoria: '', img: localImages.pintura })
-    setProductEditingId(null)
   }
 
-  const handleEditProduct = (product: Product) => {
+  const handleEditProduct = (product: ProductoVista) => {
     setProductEditingId(product.id)
     setAdminProductForm({
       nombre: product.nombre,
       precio: String(product.precio),
       stock: String(product.stock),
-      categoria: product.categoria,
+      categoriaId: String(product.categoriaId),
       img: product.img,
     })
   }
 
-  const createOrUpdateUser = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const handleDeleteProduct = async (product: ProductoVista) => {
+    try {
+      await productosApi.eliminar(product.id)
+      setAdminMessage(`Producto "${product.nombre}" eliminado.`)
+      if (productEditingId === product.id) {
+        setProductEditingId(null)
+        setAdminProductForm(formularioProductoVacio)
+      }
+      await cargarCatalogo()
+    } catch (error) {
+      setAdminMessage(mensajeDeError(error))
+    }
+  }
 
-    if (!adminUserForm.run || !adminUserForm.nombre || !validarEmail(adminUserForm.correo) || !adminUserForm.rol) {
-      setAdminMessage('Complete correctamente los datos del usuario.')
+  // ---------- Administración: usuarios (usuarios-service) ----------
+
+  const createOrUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const run = adminUserForm.run.trim()
+    const nombre = adminUserForm.nombre.trim()
+    const correo = adminUserForm.correo.trim().toLowerCase()
+
+    if (!validarRun(run) || !nombre || !validarEmail(correo) || !adminUserForm.tipo) {
+      setAdminMessage('Complete correctamente los datos del usuario (RUN válido, nombre y correo).')
       return
     }
 
-    if (userEditingId) {
-      setUsers((prev) => prev.map((item) => (item.id === userEditingId ? { ...item, ...adminUserForm } : item)))
-      setAdminMessage('Usuario actualizado.')
-    } else {
-      setUsers((prev) => [{ id: Date.now(), ...adminUserForm }, ...prev])
-      setAdminMessage('Usuario creado.')
+    try {
+      if (userEditingId) {
+        // Se mantienen los datos que el formulario no muestra (apellidos, dirección, etc.).
+        const original = users.find((u) => u.id === userEditingId)
+        await usuariosApi.actualizar(userEditingId, {
+          run,
+          nombre,
+          correo,
+          tipo: adminUserForm.tipo,
+          apellidos: original?.apellidos,
+          telefono: original?.telefono,
+          region: original?.region,
+          comuna: original?.comuna,
+          direccion: original?.direccion,
+        })
+        setAdminMessage('Usuario actualizado.')
+      } else {
+        await usuariosApi.crear({
+          run,
+          nombre,
+          correo,
+          tipo: adminUserForm.tipo,
+          password: adminUserForm.password,
+          rol: adminUserForm.rol === 'ADMIN' ? 'ADMIN' : 'CLIENTE',
+        })
+        setAdminMessage('Usuario creado.')
+      }
+      setAdminUserForm(formularioUsuarioVacio)
+      setUserEditingId(null)
+      setUsers(await usuariosApi.listar())
+    } catch (error) {
+      setAdminMessage(mensajeDeError(error))
     }
-
-    setAdminUserForm({ run: '', nombre: '', correo: '', rol: 'Contratista' })
-    setUserEditingId(null)
   }
 
-  const handleEditUser = (user: UserRecord) => {
+  const handleEditUser = (user: { id: number; run: string; nombre: string; correo: string; tipo: string }) => {
     setUserEditingId(user.id)
-    setAdminUserForm({
-      run: user.run,
-      nombre: user.nombre,
-      correo: user.correo,
-      rol: user.rol,
-    })
+    setAdminUserForm({ run: user.run, nombre: user.nombre, correo: user.correo, tipo: user.tipo, password: '', rol: 'CLIENTE' })
   }
+
+  const handleDeleteUser = async (user: { id: number; correo: string }) => {
+    try {
+      await usuariosApi.eliminar(user.id)
+      setAdminMessage(`Usuario ${user.correo} eliminado.`)
+      setUsers(await usuariosApi.listar())
+    } catch (error) {
+      setAdminMessage(mensajeDeError(error))
+    }
+  }
+
+  // ---------- Vistas ----------
 
   const renderHome = () => (
     <HomePage
@@ -535,12 +605,20 @@ function App() {
   const renderCatalogo = () => (
     <CatalogPage
       products={products}
-      cart={cart}
+      status={catalogStatus}
+      errorMessage={catalogError}
+      cart={carritoActual?.items ?? []}
+      cartTotal={carritoActual?.total ?? 0}
+      cartMessage={cartMessage}
+      isLoggedIn={Boolean(sesion)}
       onOpenDetail={(productId) => openView('catalogo', productId)}
-      onAddToCart={addToCart}
-      onRemoveFromCart={removeFromCart}
-      onClearCart={() => setCart([])}
-      cartTotal={cartTotal}
+      onAddToCart={(product) => void addToCart(product)}
+      onRemoveFromCart={(productoId) => void removeFromCart(productoId)}
+      onClearCart={() => void clearCart()}
+      onRetry={() => {
+        setCatalogStatus('cargando')
+        void cargarCatalogo()
+      }}
     />
   )
 
@@ -555,8 +633,9 @@ function App() {
             <p className="detail-price">{formatPrice(selectedProduct.precio)}</p>
             <p>{selectedProduct.descripcion}</p>
             <p className="stock-line">Stock disponible: <strong>{selectedProduct.stock}</strong></p>
+            {cartMessage && <p className="form-message" role="status">{cartMessage}</p>}
             <div className="detail-actions">
-              <button type="button" className="btn btn-primary" onClick={() => addToCart(selectedProduct)}>
+              <button type="button" className="btn btn-primary" onClick={() => void addToCart(selectedProduct)} disabled={selectedProduct.stock <= 0}>
                 Agregar a selección
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => openView('catalogo')}>
@@ -572,12 +651,15 @@ function App() {
   )
 
   const renderNovedades = () => (
-    <NewsPage
-      newsItems={newsItems}
-      selectedNews={selectedNews}
-      onSelectNews={setSelectedNews}
-      onCloseNews={() => setSelectedNews(null)}
-    />
+    <>
+      {newsError && <p className="section-block form-message" role="alert">{newsError}</p>}
+      <NewsPage
+        newsItems={news}
+        selectedNews={selectedNews}
+        onSelectNews={setSelectedNews}
+        onCloseNews={() => setSelectedNews(null)}
+      />
+    </>
   )
 
   const renderContacto = () => (
@@ -585,7 +667,7 @@ function App() {
       form={contactForm}
       message={contactMessage}
       onChange={(next) => setContactForm(next)}
-      onSubmit={handleContactSubmit}
+      onSubmit={(event) => void handleContactSubmit(event)}
     />
   )
 
@@ -595,7 +677,7 @@ function App() {
       password={loginForm.password}
       message={loginMessage}
       onChange={(field, value) => setLoginForm({ ...loginForm, [field]: value })}
-      onSubmit={loginCliente}
+      onSubmit={(event) => void loginCliente(event)}
       onOpenRegister={() => openView('registro')}
     />
   )
@@ -604,60 +686,98 @@ function App() {
     <RegisterPage
       form={registerForm}
       message={registerMessage}
-      regiones={regionesChile}
+      regiones={regiones}
       onChange={(next) => setRegisterForm(next)}
-      onSubmit={handleRegisterSubmit}
+      onSubmit={(event) => void handleRegisterSubmit(event)}
       onOpenLogin={() => openView('login')}
     />
   )
 
   const renderPerfil = () => (
     <ProfilePage
-      activeAccount={activeAccount}
+      activeAccount={perfilActual}
       profileForm={profileForm}
       profileMessage={profileMessage}
-      regiones={regionesChile}
+      regiones={regiones}
       onOpenLogin={() => openView('login')}
       onOpenRegister={() => openView('registro')}
-      onLogout={logoutCliente}
+      onLogout={cerrarSesion}
       onChange={(next) => setProfileForm(next)}
-      onSubmit={saveProfile}
+      onSubmit={(event) => void saveProfile(event)}
     />
   )
 
-  const renderAdmin = () => (
-    <AdminPage
-      adminSession={adminSession}
-      adminMessage={adminMessage}
-      adminLoginForm={adminLoginForm}
-      adminProductForm={adminProductForm}
-      productEditingId={productEditingId}
-      adminUserForm={adminUserForm}
-      userEditingId={userEditingId}
-      products={products}
-      users={users}
-      onUpdateLoginField={(field, value) => setAdminLoginForm({ ...adminLoginForm, [field]: value })}
-      onAdminLogin={adminLogin}
-      onLogoutAdmin={logoutAdmin}
-      onUpdateProductField={(field, value) => setAdminProductForm({ ...adminProductForm, [field]: value })}
-      onCreateOrUpdateProduct={createOrUpdateProduct}
-      onEditProduct={handleEditProduct}
-      onUpdateUserField={(field, value) => setAdminUserForm({ ...adminUserForm, [field]: value })}
-      onCreateOrUpdateUser={createOrUpdateUser}
-      onEditUser={handleEditUser}
-    />
-  )
+  /** Restricción por rol: el panel solo se muestra a usuarios con rol ADMIN. */
+  const renderAdmin = () => {
+    if (!sesion) {
+      return (
+        <AccesoRestringido
+          titulo="Panel solo para administradores"
+          mensaje="Inicia sesión con una cuenta de administrador para entrar al panel."
+          textoBoton="Iniciar sesión"
+          onAccion={() => openView('login')}
+        />
+      )
+    }
+    if (!esAdmin) {
+      return (
+        <AccesoRestringido
+          titulo="Acceso denegado"
+          mensaje="Tu cuenta no tiene permisos de administrador."
+          textoBoton="Volver al inicio"
+          onAccion={() => openView('home')}
+        />
+      )
+    }
+    return (
+      <AdminPage
+        adminCorreo={sesion.correo}
+        adminMessage={adminMessage}
+        adminProductForm={adminProductForm}
+        productEditingId={productEditingId}
+        categorias={categorias}
+        adminUserForm={adminUserForm}
+        userEditingId={userEditingId}
+        products={products}
+        users={users}
+        onLogoutAdmin={cerrarSesion}
+        onUpdateProductField={(field, value) => setAdminProductForm({ ...adminProductForm, [field]: value })}
+        onCreateOrUpdateProduct={(event) => void createOrUpdateProduct(event)}
+        onEditProduct={handleEditProduct}
+        onDeleteProduct={(product) => void handleDeleteProduct(product)}
+        onCancelProductEdit={() => {
+          setProductEditingId(null)
+          setAdminProductForm(formularioProductoVacio)
+        }}
+        onUpdateUserField={(field, value) => setAdminUserForm({ ...adminUserForm, [field]: value })}
+        onCreateOrUpdateUser={(event) => void createOrUpdateUser(event)}
+        onEditUser={handleEditUser}
+        onDeleteUser={(user) => void handleDeleteUser(user)}
+        onCancelUserEdit={() => {
+          setUserEditingId(null)
+          setAdminUserForm(formularioUsuarioVacio)
+        }}
+      />
+    )
+  }
 
+  // El menú cambia según la sesión y el rol: cada usuario solo ve lo que puede usar.
   const navItems = [
-    { label: 'Inicio', onClick: () => setActiveView('home') },
-    { label: 'Nosotros', onClick: () => setActiveView('nosotros') },
-    { label: 'Novedades', onClick: () => setActiveView('novedades') },
-    { label: 'Catálogo', onClick: () => setActiveView('catalogo') },
-    { label: 'Contacto', onClick: () => setActiveView('contacto') },
-    { label: 'Iniciar sesión', onClick: () => setActiveView('login') },
-    { label: 'Mi perfil', onClick: () => setActiveView('perfil') },
-    { label: 'Registrarse', onClick: () => setActiveView('registro') },
-    { label: 'Panel Admin', onClick: () => setActiveView('admin') },
+    { label: 'Inicio', onClick: () => openView('home') },
+    { label: 'Nosotros', onClick: () => openView('nosotros') },
+    { label: 'Novedades', onClick: () => openView('novedades') },
+    { label: 'Catálogo', onClick: () => openView('catalogo') },
+    { label: 'Contacto', onClick: () => openView('contacto') },
+    ...(sesion
+      ? [
+          { label: 'Mi perfil', onClick: () => openView('perfil') },
+          ...(esAdmin ? [{ label: 'Panel Admin', onClick: abrirPanelAdmin }] : []),
+          { label: 'Cerrar sesión', onClick: cerrarSesion },
+        ]
+      : [
+          { label: 'Iniciar sesión', onClick: () => openView('login') },
+          { label: 'Registrarse', onClick: () => openView('registro') },
+        ]),
   ]
 
   const header = (
@@ -669,6 +789,11 @@ function App() {
         <div>
           <strong>Ferretería Los Maestros</strong>
           <small>Materiales y herramientas</small>
+          {sesion && (
+            <small className="session-badge" data-testid="sesion-actual">
+              {sesion.correo} · {sesion.rol}
+            </small>
+          )}
         </div>
       </div>
       <MainNavigation items={navItems} />

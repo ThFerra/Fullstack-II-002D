@@ -1,16 +1,13 @@
+/** Datos del perfil que entrega usuarios-service (GET /api/usuarios/me). */
 type CustomerAccountLike = {
-  id: number
-  run: string
   nombre: string
-  apellidos: string
+  apellidos: string | null
   correo: string
-  telefono: string
+  telefono: string | null
   tipo: string
-  region: string
-  comuna: string
-  direccion: string
-  passwordSalt: string
-  passwordHash: string
+  region: string | null
+  comuna: string | null
+  direccion: string | null
 }
 
 type ProfileForm = {
@@ -83,7 +80,7 @@ export function ProfilePage({
         <form className="form-box profile-edit-form" onSubmit={onSubmit}>
           <div className="profile-section-heading">
             <h3>Datos personales y dirección</h3>
-            <p>Estos datos se guardan en esta cuenta para futuras visitas.</p>
+            <p>Estos datos se guardan en el servidor y quedan disponibles en cualquier dispositivo.</p>
           </div>
           <div className="two-columns">
             <label>Nombre<input autoComplete="given-name" value={profileForm.nombre} onChange={(event) => onChange({ ...profileForm, nombre: event.target.value })} required /></label>

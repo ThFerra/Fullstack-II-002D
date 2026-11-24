@@ -81,7 +81,7 @@ body { color: var(--legacy-text); }
   object-fit: contain; border: 0; border-radius: 10px; background: #f8f8f5;
 }
 .product-card .card-body { padding: 1rem .25rem .3rem; }
-.product-card .card-title, .info-card h3, .news-card h3 { color: var(--legacy-navy); font-family: Georgia, serif; }
+.product-card h3, .product-card .card-title, .info-card h3, .news-card h3 { color: var(--legacy-navy); font-family: Georgia, serif; }
 .news-card { overflow: hidden; padding: 0; }
 .news-card { display: flex; border: 1px solid rgba(23,50,77,.1); color: var(--legacy-text); cursor: pointer; }
 .news-card:hover, .news-card:focus-visible { transform: translateY(-4px); box-shadow: 0 16px 35px rgba(23,50,77,.16); }
@@ -169,3 +169,6 @@ body { color: var(--legacy-text); }
   .main-nav .nav-link { padding: .45rem .55rem; font-size: .84rem; }
   .two-columns, .stats-grid { grid-template-columns: 1fr; }
 }
+.benefits-list li { color: var(--legacy-text); }
+.benefits-list li::before { color: var(--legacy-teal); }
+.stock-line { color: var(--legacy-muted); }

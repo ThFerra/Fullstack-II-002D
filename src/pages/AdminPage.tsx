@@ -1,7 +1,11 @@
+// Panel administrador. Solo se muestra a usuarios con rol ADMIN (lo controla App.tsx).
+// Todas las acciones llaman a la API con el token del administrador.
+
 type ProductAdmin = {
   id: number
   nombre: string
   categoria: string
+  categoriaId: number
   precio: number
   stock: number
   img: string
@@ -12,15 +16,16 @@ type UserAdmin = {
   id: number
   run: string
   nombre: string
+  apellidos: string | null
   correo: string
-  rol: string
+  tipo: string
 }
 
 type AdminProductForm = {
   nombre: string
   precio: string
   stock: string
-  categoria: string
+  categoriaId: string
   img: string
 }
 
@@ -28,84 +33,70 @@ type AdminUserForm = {
   run: string
   nombre: string
   correo: string
+  tipo: string
+  password: string
   rol: string
 }
 
 type AdminPageProps = {
-  adminSession: boolean
+  adminCorreo: string
   adminMessage: string
-  adminLoginForm: { correo: string; password: string }
   adminProductForm: AdminProductForm
   productEditingId: number | null
+  categorias: Array<{ id: number; nombre: string }>
   adminUserForm: AdminUserForm
   userEditingId: number | null
   products: ProductAdmin[]
   users: UserAdmin[]
-  onUpdateLoginField: (field: 'correo' | 'password', value: string) => void
-  onAdminLogin: (event: React.FormEvent<HTMLFormElement>) => void
   onLogoutAdmin: () => void
   onUpdateProductField: (field: keyof AdminProductForm, value: string) => void
   onCreateOrUpdateProduct: (event: React.FormEvent<HTMLFormElement>) => void
   onEditProduct: (product: ProductAdmin) => void
+  onDeleteProduct: (product: ProductAdmin) => void
+  onCancelProductEdit: () => void
   onUpdateUserField: (field: keyof AdminUserForm, value: string) => void
   onCreateOrUpdateUser: (event: React.FormEvent<HTMLFormElement>) => void
   onEditUser: (user: UserAdmin) => void
+  onDeleteUser: (user: UserAdmin) => void
+  onCancelUserEdit: () => void
 }
 
 const formatPrice = (value: number) => `$${value.toLocaleString('es-CL')}`
 
 export function AdminPage({
-  adminSession,
+  adminCorreo,
   adminMessage,
-  adminLoginForm,
   adminProductForm,
   productEditingId,
+  categorias,
   adminUserForm,
   userEditingId,
   products,
   users,
-  onUpdateLoginField,
-  onAdminLogin,
   onLogoutAdmin,
   onUpdateProductField,
   onCreateOrUpdateProduct,
   onEditProduct,
+  onDeleteProduct,
+  onCancelProductEdit,
   onUpdateUserField,
   onCreateOrUpdateUser,
   onEditUser,
+  onDeleteUser,
+  onCancelUserEdit,
 }: AdminPageProps) {
-  if (!adminSession) {
-    return (
-      <section className="section-block admin-layout">
-        <div className="form-card">
-          <div className="section-heading">
-            <p className="eyebrow">Panel admin</p>
-            <h2>Acceso administrador</h2>
-          </div>
-          <form onSubmit={onAdminLogin} className="form-box">
-            <label>
-              Correo
-              <input value={adminLoginForm.correo} onChange={(e) => onUpdateLoginField('correo', e.target.value)} />
-            </label>
-            <label>
-              Contraseña
-              <input type="password" value={adminLoginForm.password} onChange={(e) => onUpdateLoginField('password', e.target.value)} />
-            </label>
-            {adminMessage && <p className="form-message">{adminMessage}</p>}
-            <button type="submit" className="btn btn-primary">Ingresar</button>
-          </form>
-        </div>
-      </section>
-    )
-  }
-
   return (
     <section className="section-block admin-layout">
       <div className="admin-panel">
         <div className="admin-header">
-          <h2>Panel administrador</h2>
+          <div>
+            <h2>Panel administrador</h2>
+            <small>Sesión: {adminCorreo}</small>
+          </div>
           <button type="button" className="btn btn-secondary" onClick={onLogoutAdmin}>Cerrar sesión</button>
         </div>
+
+        {adminMessage && <p className="form-message" role="status">{adminMessage}</p>}
 
         <div className="admin-sections">
           <div className="admin-card">
@@ -117,19 +108,27 @@ export function AdminPage({
               </label>
               <label>
                 Precio
-                <input type="number" value={adminProductForm.precio} onChange={(e) => onUpdateProductField('precio', e.target.value)} />
+                <input type="number" min="0" value={adminProductForm.precio} onChange={(e) => onUpdateProductField('precio', e.target.value)} />
               </label>
               <label>
                 Stock
-                <input type="number" value={adminProductForm.stock} onChange={(e) => onUpdateProductField('stock', e.target.value)} />
+                <input type="number" min="0" value={adminProductForm.stock} onChange={(e) => onUpdateProductField('stock', e.target.value)} />
               </label>
               <label>
                 Categoría
-                <input value={adminProductForm.categoria} onChange={(e) => onUpdateProductField('categoria', e.target.value)} />
+                <select value={adminProductForm.categoriaId} onChange={(e) => onUpdateProductField('categoriaId', e.target.value)}>
+                  <option value="">Seleccione</option>
+                  {categorias.map((categoria) => (
+                    <option key={categoria.id} value={String(categoria.id)}>{categoria.nombre}</option>
+                  ))}
+                </select>
               </label>
               <button type="submit" className="btn btn-primary">
                 {productEditingId ? 'Actualizar producto' : 'Guardar producto'}
               </button>
+              {productEditingId && (
+                <button type="button" className="btn btn-outline-secondary" onClick={onCancelProductEdit}>Cancelar edición</button>
+              )}
             </form>
             <div className="admin-list">
               {products.map((product) => (
@@ -138,7 +137,10 @@ export function AdminPage({
                     <strong>{product.nombre}</strong>
                     <span>{product.categoria} · {formatPrice(product.precio)} · Stock: {product.stock}</span>
                   </div>
-                  <button type="button" className="btn btn-secondary" onClick={() => onEditProduct(product)}>Editar</button>
+                  <div className="d-flex gap-2">
+                    <button type="button" className="btn btn-secondary" onClick={() => onEditProduct(product)}>Editar</button>
+                    <button type="button" className="btn btn-outline-danger" aria-label={`Eliminar ${product.nombre}`} onClick={() => onDeleteProduct(product)}>Eliminar</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -160,25 +162,49 @@ export function AdminPage({
                 <input value={adminUserForm.correo} onChange={(e) => onUpdateUserField('correo', e.target.value)} />
               </label>
               <label>
-                Rol
-                <select value={adminUserForm.rol} onChange={(e) => onUpdateUserField('rol', e.target.value)}>
+                Tipo
+                <select value={adminUserForm.tipo} onChange={(e) => onUpdateUserField('tipo', e.target.value)}>
                   <option value="Contratista">Contratista</option>
                   <option value="Vendedor">Vendedor</option>
                   <option value="Cliente">Cliente</option>
+                  <option value="Administrador">Administrador</option>
                 </select>
               </label>
+              {!userEditingId && (
+                <>
+                  <label>
+                    Contraseña
+                    <input type="password" value={adminUserForm.password} onChange={(e) => onUpdateUserField('password', e.target.value)} />
+                  </label>
+                  <label>
+                    Rol de acceso
+                    <select value={adminUserForm.rol} onChange={(e) => onUpdateUserField('rol', e.target.value)}>
+                      <option value="CLIENTE">CLIENTE</option>
+                      <option value="ADMIN">ADMIN</option>
+                    </select>
+                  </label>
+                </>
+              )}
               <button type="submit" className="btn btn-primary">
                 {userEditingId ? 'Actualizar usuario' : 'Crear usuario'}
               </button>
+              {userEditingId && (
+                <button type="button" className="btn btn-outline-secondary" onClick={onCancelUserEdit}>Cancelar edición</button>
+              )}
             </form>
             <div className="admin-table">
               {users.map((user) => (
                 <div key={user.id} className="admin-row">
                   <div>
-                    <strong>{user.nombre}</strong>
-                    <span>{user.correo} · {user.rol}</span>
+                    <strong>{[user.nombre, user.apellidos].filter(Boolean).join(' ')}</strong>
+                    <span>{user.correo} · {user.tipo}</span>
                   </div>
-                  <button type="button" className="btn btn-secondary" onClick={() => onEditUser(user)}>Editar</button>
+                  <div className="d-flex gap-2">
+                    <button type="button" className="btn btn-secondary" onClick={() => onEditUser(user)}>Editar</button>
+                    {user.correo !== adminCorreo && (
+                      <button type="button" className="btn btn-outline-danger" aria-label={`Eliminar ${user.correo}`} onClick={() => onDeleteUser(user)}>Eliminar</button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
